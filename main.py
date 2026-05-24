@@ -12,7 +12,6 @@ if __name__ == "__main__":
     elif (path_to_file_1, path_to_file_2) != "":
         path1, path2 = path_to_file_1, path_to_file_2
     else:
-        # Tryb interaktywny – podaj ścieżki ręcznie (przydatne w IDE)
         path1 = input("Ścieżka do pliku 1 (.wav): ").strip()
         path2 = input("Ścieżka do pliku 2 (.wav): ").strip()
 
