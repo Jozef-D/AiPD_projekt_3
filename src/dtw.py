@@ -1,31 +1,37 @@
 import numpy as np
 
+
 def local_cost_matrix(x, y):
     if x.ndim == 1:
         x = x[:, np.newaxis]
     if y.ndim == 1:
         y = y[:, np.newaxis]
-
     diff = x[:, np.newaxis, :] - y[np.newaxis, :, :]
     C = np.sqrt(np.sum(diff ** 2, axis=-1))
     return C
 
 
-def dtw(x, y) -> tuple[float, np.ndarray, list[tuple[int, int]]]:
+def dtw(x, y, band_ratio=None):
+    """Klasyczne DTW z opcjonalnym ograniczeniem Sakoe-Chiba (band_ratio in (0,1])."""
     C = local_cost_matrix(x, y)
     N, M = C.shape
-
     D = np.full((N, M), np.inf)
-
     D[0, 0] = C[0, 0]
-    for m in range(1, M):
-        D[0, m] = D[0, m - 1] + C[0, m]
 
-    for n in range(1, N):
+    if band_ratio is None:
+        band = max(N, M)
+    else:
+        band = max(int(band_ratio * max(N, M)), abs(N - M) + 1)
+
+    for m in range(1, min(M, band + 1)):
+        D[0, m] = D[0, m - 1] + C[0, m]
+    for n in range(1, min(N, band + 1)):
         D[n, 0] = D[n - 1, 0] + C[n, 0]
 
     for n in range(1, N):
-        for m in range(1, M):
+        m_lo = max(1, n - band)
+        m_hi = min(M, n + band + 1)
+        for m in range(m_lo, m_hi):
             D[n, m] = min(D[n - 1, m - 1],
                           D[n - 1, m],
                           D[n, m - 1]) + C[n, m]

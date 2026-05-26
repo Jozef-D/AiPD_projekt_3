@@ -1,24 +1,34 @@
 import os
+import unicodedata
 import numpy as np
-from .basic_functions import read_wav, extract_frames
+from .basic_functions import read_wav, extract_features
 
-WORDS = {
-    "zero", "jeden", "dwa", "trzy", "cztery",
-    "piec", "szesc", "siedem", "osiem", "dziewiec",
-    "dziesiec", "kwiat", "pies", "kot", "samochod",
-    "jajko", "benzyna", "chrzaszcz", "odrzutowiec", "dzwiek",
-    "przetwarzanie",
-    # wersje z polskimi znakami (na wypadek gdyby nazwy plików je miały (nie chciało mi się sprawdzać))
-    "pięć", "sześć", "dziewięć", "dziesięć",
-    "samochód", "chrząszcz", "dźwięk",
+DIGIT_TO_POLISH = {
+    "0": "zero", "1": "jeden", "2": "dwa", "3": "trzy", "4": "cztery",
+    "5": "piec", "6": "szesc", "7": "siedem", "8": "osiem", "9": "dziewiec",
+    "10": "dziesiec",
 }
 
-MAX_SPEAKER = 20
+_POLISH_FOLD = str.maketrans({
+    "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n",
+    "ó": "o", "ś": "s", "ź": "z", "ż": "z",
+    "Ą": "a", "Ć": "c", "Ę": "e", "Ł": "l", "Ń": "n",
+    "Ó": "o", "Ś": "s", "Ź": "z", "Ż": "z",
+})
 
 
-def load_database(root):
+def canonical_word(name):
+    s = name.lower().strip()
+    s = s.translate(_POLISH_FOLD)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.encode("ascii", errors="ignore").decode("ascii")
+    s = s.strip()
+    return DIGIT_TO_POLISH.get(s, s)
+
+
+def load_database(root, verbose=True):
     records = []
-
     if not os.path.isdir(root):
         raise FileNotFoundError(f"Nie znaleziono katalogu: {root}")
 
@@ -30,13 +40,9 @@ def load_database(root):
         parts = speaker_dir.split("_")
         if len(parts) < 2 or parts[0].lower() != "speaker":
             continue
-
         try:
             speaker_id = int(parts[1])
         except ValueError:
-            continue
-
-        if speaker_id > MAX_SPEAKER:
             continue
 
         gender = parts[2].lower() if len(parts) >= 3 else "?"
@@ -48,30 +54,31 @@ def load_database(root):
         for fname in sorted(os.listdir(norm_path)):
             if not fname.lower().endswith(".wav"):
                 continue
-
-            name = fname[:-4]  # bez .wav
+            name = fname[:-4]
             if "_" not in name:
                 continue
 
             last_underscore = name.rfind("_")
-            word = name[:last_underscore]
+            raw_word = name[:last_underscore]
             take_str = name[last_underscore + 1:]
-
             try:
                 take = int(take_str)
             except ValueError:
                 continue
 
-            if word not in WORDS:
+            word = canonical_word(raw_word)
+            if not word:
                 continue
 
             wav_path = os.path.join(norm_path, fname)
             try:
-                raw = open(wav_path, "rb").read()
+                with open(wav_path, "rb") as f:
+                    raw = f.read()
                 sig, sr, ch, bps = read_wav(raw)
-                features = extract_frames(sig)
+                features = extract_features(sig, sample_rate=sr)
             except Exception as e:
-                print(f"  [SKIP] {wav_path}: {e}")
+                if verbose:
+                    print(f"  [SKIP] {wav_path}: {e}")
                 continue
 
             records.append({
@@ -83,7 +90,12 @@ def load_database(root):
                 "features":   features,
             })
 
-    print(f"Załadowano {len(records)} nagrań "
-          f"({len({r['speaker_id'] for r in records})} speakerów, "
-          f"{len({r['word'] for r in records})} słów).")
+    if verbose:
+        print(f"Załadowano {len(records)} nagrań "
+              f"({len({r['speaker_id'] for r in records})} speakerów, "
+              f"{len({r['word'] for r in records})} unikalnych słów).")
     return records
+
+
+WORDS = set()
+MAX_SPEAKER = 999

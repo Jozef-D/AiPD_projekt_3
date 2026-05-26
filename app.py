@@ -16,16 +16,22 @@ import matplotlib.gridspec as gridspec
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_wav_and_features(path, window = "hann", use_fft = True):
+    """
+    Cechy do klasyfikacji są zawsze liczone tym samym pipeline'em co baza
+    (extract_features — mel-FFT z trim'em ciszy i CMN). Tryb 'use_fft' i
+    'window' sterują tylko wizualizacją uśrednionego widma.
+    """
     raw = open(path, "rb").read()
     sig, sr, ch, bps = read_wav(raw)
 
     sig = normalize_signal(sig)
 
+    # cechy do klasyfikacji — spójne z bazą
+    features = extract_features(sig, sample_rate=sr, window=window)
+
     if use_fft:
-        features = extract_frames_fft(sig, window=window)
         freqs, avg_spec = mean_fft_spectrum(sig, window=window, sample_rate=sr)
     else:
-        features = extract_frames(sig)
         freqs    = None
         avg_spec = None
 
