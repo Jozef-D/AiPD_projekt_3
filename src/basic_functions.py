@@ -172,19 +172,37 @@ def mel_filterbank(n_fft, n_mels, sample_rate, fmin=0.0, fmax=None):
     mel_max = _hz_to_mel(fmax)
     mel_pts = np.linspace(mel_min, mel_max, n_mels + 2)
     hz_pts = _mel_to_hz(mel_pts)
-    bin_pts = np.floor((n_fft + 1) * hz_pts / sample_rate).astype(int)
-    bin_pts = np.clip(bin_pts, 0, n_fft // 2)
+
     n_bins = n_fft // 2 + 1
+    bin_freqs = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
+
     fb = np.zeros((n_mels, n_bins), dtype=np.float64)
     for m in range(n_mels):
-        left, center, right = bin_pts[m], bin_pts[m+1], bin_pts[m+2]
-        if center == left or right == center:
-            continue
-        for k in range(left, center):
-            fb[m, k] = (k - left) / (center - left)
-        for k in range(center, right):
-            fb[m, k] = (right - k) / (right - center)
+        left, center, right = hz_pts[m], hz_pts[m + 1], hz_pts[m + 2]
+
+        if center > left:
+            rising = (bin_freqs - left) / (center - left)
+            mask = (bin_freqs >= left) & (bin_freqs <= center)
+            fb[m, mask] = rising[mask]
+
+        if right > center:
+            falling = (right - bin_freqs) / (right - center)
+            mask = (bin_freqs >= center) & (bin_freqs <= right)
+            fb[m, mask] = falling[mask]
     return fb
+
+
+def _delta(feat, width=2):
+    n_frames = feat.shape[0]
+    if n_frames < 2:
+        return np.zeros_like(feat)
+    padded = np.pad(feat, ((width, width), (0, 0)), mode="edge")
+    denom = 2.0 * sum(d * d for d in range(1, width + 1))
+    out = np.zeros_like(feat)
+    for d in range(1, width + 1):
+        out += d * (padded[width + d: width + d + n_frames]
+                    - padded[width - d: width - d + n_frames])
+    return out / denom
 
 
 def extract_features(signal,
@@ -195,9 +213,9 @@ def extract_features(signal,
                      n_mels=24,
                      pre_emphasis=0.97,
                      do_normalize=True,
-                     do_trim=True):
-    """Kanoniczne cechy do klasyfikacji: normalize -> trim -> pre-emphasis ->
-    framing -> window -> rFFT -> mel filterbank -> log -> CMN."""
+                     do_trim=True,
+                     cmn=False,
+                     add_deltas=True):
     if do_normalize:
         signal = normalize_signal(signal)
     if do_trim:
@@ -211,13 +229,22 @@ def extract_features(signal,
     n_fft = frame_len
     n_frames = 1 + (len(signal) - frame_len) // hop_len
     fb = mel_filterbank(n_fft, n_mels, sample_rate)
-    features = np.zeros((n_frames, n_mels), dtype=np.float64)
+    log_mel = np.zeros((n_frames, n_mels), dtype=np.float64)
     for i in range(n_frames):
         frame = signal[i*hop_len: i*hop_len + frame_len] * win
         spectrum = np.fft.rfft(frame, n=n_fft)
         power = spectrum.real ** 2 + spectrum.imag ** 2
         mel_energy = fb @ power
-        features[i] = np.log(mel_energy + 1e-10)
-    # Cepstral mean normalization
-    features = features - features.mean(axis=0, keepdims=True)
+        log_mel[i] = np.log(mel_energy + 1e-10)
+
+    if cmn:
+        log_mel = log_mel - log_mel.mean(axis=0, keepdims=True)
+
+    if add_deltas:
+        d1 = _delta(log_mel, width=2)
+        d2 = _delta(d1, width=2)
+        features = np.concatenate([log_mel, d1, d2], axis=1)
+    else:
+        features = log_mel
+
     return features

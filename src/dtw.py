@@ -12,7 +12,6 @@ def local_cost_matrix(x, y):
 
 
 def dtw(x, y, band_ratio=None):
-    """Klasyczne DTW z opcjonalnym ograniczeniem Sakoe-Chiba (band_ratio in (0,1])."""
     C = local_cost_matrix(x, y)
     N, M = C.shape
     D = np.full((N, M), np.inf)

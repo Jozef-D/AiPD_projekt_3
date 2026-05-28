@@ -1,7 +1,7 @@
 import os
 import unicodedata
 import numpy as np
-from .basic_functions import read_wav, extract_features
+from .basic_functions import read_wav, extract_features, extract_frames, normalize_signal, trim_silence
 
 DIGIT_TO_POLISH = {
     "0": "zero", "1": "jeden", "2": "dwa", "3": "trzy", "4": "cztery",
@@ -75,19 +75,24 @@ def load_database(root, verbose=True):
                 with open(wav_path, "rb") as f:
                     raw = f.read()
                 sig, sr, ch, bps = read_wav(raw)
-                features = extract_features(sig, sample_rate=sr)
+                features_mel = extract_features(sig, sample_rate=sr)
+                sig_rms = normalize_signal(sig)
+                sig_rms = trim_silence(sig_rms)
+                features_rms = extract_frames(sig_rms)
             except Exception as e:
                 if verbose:
                     print(f"  [SKIP] {wav_path}: {e}")
                 continue
 
             records.append({
-                "speaker_id": speaker_id,
-                "gender":     gender,
-                "word":       word,
-                "take":       take,
-                "path":       wav_path,
-                "features":   features,
+                "speaker_id":   speaker_id,
+                "gender":       gender,
+                "word":         word,
+                "take":         take,
+                "path":         wav_path,
+                "features":     features_mel,
+                "features_mel": features_mel,
+                "features_rms": features_rms,
             })
 
     if verbose:

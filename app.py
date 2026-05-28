@@ -13,27 +13,20 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 
-def load_wav_and_features(path, window = "hann", use_fft = True):
-    """
-    Cechy do klasyfikacji są zawsze liczone tym samym pipeline'em co baza
-    (extract_features — mel-FFT z trim'em ciszy i CMN). Tryb 'use_fft' i
-    'window' sterują tylko wizualizacją uśrednionego widma.
-    """
+def load_wav_and_features(path, window="hann", use_fft=True):
     raw = open(path, "rb").read()
     sig, sr, ch, bps = read_wav(raw)
 
     sig = normalize_signal(sig)
 
-    # cechy do klasyfikacji — spójne z bazą
-    features = extract_features(sig, sample_rate=sr, window=window)
-
     if use_fft:
-        freqs, avg_spec = mean_fft_spectrum(sig, window=window, sample_rate=sr)
+        features = extract_features(sig, sample_rate=sr, window=window)
     else:
-        freqs    = None
-        avg_spec = None
+        sig_rms = trim_silence(sig)
+        features = extract_frames(sig_rms)
+
+    freqs, avg_spec = mean_fft_spectrum(sig, window=window, sample_rate=sr)
 
     return sig, sr, features, freqs, avg_spec
 
@@ -156,7 +149,6 @@ class App(tk.Tk):
         def _worker():
             try:
                 db = load_database(self.db_path)
-                # db captured as default arg – bezpieczne przekazanie przez granicę wątków
                 self.after(0, lambda db=db: self._on_db_loaded(db))
             except Exception as exc:
                 msg = str(exc)
@@ -240,11 +232,11 @@ class App(tk.Tk):
 
         feats = self.features
         db = self.database
+        mode = "rms" if self.var_feat_mode.get() == "RMS" else "mel"
 
         def _worker():
             try:
-                result = classify(feats, db, k=k)
-                # result captured as default arg – bezpieczne przekazanie przez granicę wątków
+                result = classify(feats, db, k=k, mode=mode)
                 self.after(0, lambda result=result: self._on_classified(result))
             except Exception as exc:
                 msg = str(exc)

@@ -2,24 +2,31 @@ import numpy as np
 from .dtw import dtw
 
 
-def classify(query_features, database, k=1, band_ratio=0.2):
-    """k-NN po znormalizowanej odleglosci DTW."""
+def classify(query_features, database, k=1, band_ratio=0.2, mode="mel"):
     if not database:
         raise ValueError("Baza wzorcow jest pusta.")
+
+    feat_key = "features_rms" if mode == "rms" else "features_mel"
+    if feat_key not in database[0]:
+        feat_key = "features"
+
+    N = len(query_features)
     scored = []
     for entry in database:
-        dist, _, path = dtw(query_features, entry["features"], band_ratio=band_ratio)
-        norm_dist = dist / max(len(path), 1)
+        ref = entry[feat_key]
+        dist, _, path = dtw(query_features, ref, band_ratio=band_ratio)
+        norm = N + len(ref)
+        norm_dist = dist / max(norm, 1)
         scored.append((norm_dist, entry))
     scored.sort(key=lambda x: x[0])
     top_k = [{"dist": d, **e} for d, e in scored[:k]]
     predicted_word    = _weighted_vote(top_k, "word")
     predicted_speaker = _weighted_vote(top_k, "speaker_id")
     return {
-        "predicted_word":    predicted_word,
+        "predicted_word": predicted_word,
         "predicted_speaker": predicted_speaker,
-        "best_dist":         scored[0][0],
-        "top_k":             top_k,
+        "best_dist": scored[0][0],
+        "top_k": top_k,
     }
 
 
